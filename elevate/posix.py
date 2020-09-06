@@ -1,54 +1,61 @@
 import errno
 import os
 import sys
+
 try:
-    from shlex import quote
+	from shlex import quote
 except ImportError:
-    from pipes import quote
+	from pipes import quote
 
 
 def quote_shell(args):
-    return " ".join(quote(arg) for arg in args)
+	return " ".join(quote(arg) for arg in args)
 
 
 def quote_applescript(string):
-    charmap = {
-        "\n": "\\n",
-        "\r": "\\r",
-        "\t": "\\t",
-        "\"": "\\\"",
-        "\\": "\\\\",
-    }
-    return '"%s"' % "".join(charmap.get(char, char) for char in string)
+	charmap = {
+		"\n": "\\n",
+		"\r": "\\r",
+		"\t": "\\t",
+		"\"": "\\\"",
+		"\\": "\\\\",
+	}
+	return '"%s"' % "".join(charmap.get(char, char) for char in string)
 
 
-def elevate(show_console, graphical, args):
-    if os.getuid() == 0:
-        return
+def elevate(show_console, graphical, use_venv, args):
+	if os.getuid() == 0:
+		return
 
-    args = [sys.executable] + args
-    commands = []
+	args = [sys.executable] + args
+	if use_venv:
+		from pathlib import Path
+		script_dir = Path(sys.executable).parent
+		script_path = script_dir / Path(args[1])
+		args[1] = str(script_path)
 
-    if graphical:
-        if sys.platform.startswith("darwin"):
-            commands.append([
-                "osascript",
-                "-e",
-                "do shell script %s "
-                "with administrator privileges "
-                "without altering line endings"
-                % quote_applescript(quote_shell(args))])
+	commands = []
 
-        if sys.platform.startswith("linux") and os.environ.get("DISPLAY"):
-            commands.append(["pkexec"] + args)
-            commands.append(["gksudo"] + args)
-            commands.append(["kdesudo"] + args)
+	if graphical:
+		if sys.platform.startswith("darwin"):
+			commands.append([
+				"osascript",
+				"-e",
+				"do shell script %s "
+				"with administrator privileges "
+				"without altering line endings"
+				% quote_applescript(quote_shell(args))])
 
-    commands.append(["sudo"] + args)
+		if sys.platform.startswith("linux") and os.environ.get("DISPLAY"):
+			commands.append(["pkexec"] + args)
+			commands.append(["gksudo"] + args)
+			commands.append(["kdesudo"] + args)
 
-    for args in commands:
-        try:
-            os.execlp(args[0], *args)
-        except OSError as e:
-            if e.errno != errno.ENOENT or args[0] == "sudo":
-                raise
+	commands.append(["sudo"] + args)
+
+	for args in commands:
+		try:
+			os.execlp(args[0], *args)
+		except OSError as e:
+			if e.errno != errno.ENOENT or args[0] == "sudo":
+				raise
